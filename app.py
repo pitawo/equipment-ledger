@@ -14,7 +14,9 @@ from email.mime.text import MIMEText
 app = Flask(__name__)
 # 本番では SECRET_KEY を環境変数で渡す（未設定なら起動のたびに使い捨てを生成する）
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
-socketio = SocketIO(app, cors_allowed_origins="*")
+# 非同期方式は threading を使う。eventlet / gevent は Python の版によって
+# gunicorn から読めなくなることがあり、追加依存の割に得るものが少ない。
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 login_manager = LoginManager()
 login_manager.init_app(app)

@@ -1,0 +1,39 @@
+{
+  "equipments": [
+    {
+      "id": 1,
+      "name": "Canon EOS R5",
+      "reservations": []
+    },
+    {
+      "id": 2,
+      "name": "Sony α7IV",
+      "reservations": []
+    },
+    {
+      "id": 3,
+      "name": "Nikon Z6II",
+      "reservations": []
+    },
+    {
+      "id": 4,
+      "name": "GoPro Hero 11",
+      "reservations": []
+    },
+    {
+      "id": 5,
+      "name": "DJI Ronin-S",
+      "reservations": []
+    },
+    {
+      "id": 6,
+      "name": "Manfrotto 三脚",
+      "reservations": []
+    },
+    {
+      "id": 7,
+      "name": "SDカード 128GB",
+      "reservations": []
+    }
+  ]
+}

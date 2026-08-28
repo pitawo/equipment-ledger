@@ -1,0 +1,6 @@
+flask
+flask-socketio
+gunicorn
+eventlet
+flask-login
+werkzeug

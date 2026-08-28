@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ログイン - 備品台帳</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-slate-50 font-sans text-slate-900 flex items-center justify-center min-h-screen">
+    <div class="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-slate-200">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-black tracking-tighter text-indigo-600 mb-2"><i class="fa-solid fa-box mr-2"></i>備品台帳 <span class="text-slate-400 font-light">PRO</span></h1>
+            <p class="text-slate-500 font-medium text-sm">システムへログイン</p>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="mb-4 bg-green-50 text-green-600 p-3 rounded-lg text-sm flex items-center">
+                        <i class="fa-solid fa-check-circle mr-2"></i>{{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% if error %}
+        <div class="mb-4 bg-rose-50 text-rose-500 p-3 rounded-lg text-sm flex items-center">
+            <i class="fa-solid fa-exclamation-circle mr-2"></i>{{ error }}
+        </div>
+        {% endif %}
+
+        <form action="/login" method="POST" class="space-y-5">
+            <div>
+                <label class="text-xs font-bold text-slate-500 uppercase block mb-1">メールアドレス</label>
+                <div class="relative">
+                    <i class="fa-solid fa-envelope absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                    <input type="email" name="email" required placeholder="user@example.com"
+                        class="pl-10 w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                </div>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-slate-500 uppercase block mb-1">パスワード</label>
+                <div class="relative">
+                    <i class="fa-solid fa-lock absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                    <input type="password" name="password" required placeholder="••••••••"
+                        class="pl-10 w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
+                </div>
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-indigo-100 mt-6">
+                ログイン
+            </button>
+        </form>
+
+        <div class="mt-6 text-center text-sm">
+            <p class="text-slate-500">アカウントをお持ちでないですか？ <br class="sm:hidden"><a href="/register" class="text-indigo-600 font-bold hover:underline">新規登録はこちら</a></p>
+        </div>
+    </div>
+</body>
+</html>

@@ -8,6 +8,7 @@ import json
 import os
 import atexit
 import secrets
+import uuid
 import smtplib
 from email.mime.text import MIMEText
 
@@ -23,6 +24,10 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = 'ログインしてください。'
 login_manager.login_message_category = 'error'
+
+# 見学モード（公開デモ用）。ALLOW_GUEST=0 で無効にできる
+ALLOW_GUEST = os.environ.get('ALLOW_GUEST', '1') != '0'
+GUEST_EMAIL = 'guest@example.com'
 
 USERS_DATA_FILE = os.path.join(os.path.dirname(__file__), 'users_data.json')
 
@@ -347,6 +352,35 @@ def login():
             error = "メールアドレスまたはパスワードが正しくありません"
             
     return render_template('login.html', error=error)
+
+@app.route('/guest')
+def guest_login():
+    """登録せずに中身を見てもらうための入口。
+
+    公開デモでは、最初に登録を求められると中を見ずに離脱してしまう。
+    見学用の利用者をその場で用意してログインさせる。データは共有なので、
+    見学中の操作は他の見学者にも見える。
+    """
+    if not ALLOW_GUEST:
+        flash('見学モードは無効になっています。', 'error')
+        return redirect(url_for('login'))
+
+    users = load_users()
+    guest = next((u for u in users if u['email'] == GUEST_EMAIL), None)
+    if not guest:
+        # 永続ディスクの無い環境では再起動で消えるため、その場で作り直す
+        guest = {
+            'id': str(uuid.uuid4()),
+            'name': '見学ユーザー',
+            'email': GUEST_EMAIL,
+            'password_hash': generate_password_hash(secrets.token_urlsafe(32)),
+        }
+        users.append(guest)
+        save_users(users)
+
+    login_user(User(guest['id'], guest['name'], guest['email'], guest['password_hash']))
+    flash('見学モードで開いています。操作は他の見学者にも見えます。', 'success')
+    return redirect(url_for('index'))
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():

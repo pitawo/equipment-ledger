@@ -140,6 +140,11 @@
 
             <!-- ユーザー情報とログアウト -->
             <div class="flex items-center gap-3 ml-4 border-l pl-4 border-slate-200">
+                {% if current_user.is_guest %}
+                <span class="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold">
+                    <i class="fa-solid fa-eye mr-1"></i>デモとして閲覧中
+                </span>
+                {% endif %}
                 <span class="text-sm font-bold text-slate-700">
                     <i class="fa-solid fa-user-circle text-indigo-500 mr-1 text-lg align-middle"></i>
                     {{ current_user.name }}
@@ -219,6 +224,13 @@
                     <div class="camera-card bg-white p-5 rounded-2xl shadow-sm border {{ 'border-l-8 border-l-green-400' if eq.status == '空き' else 'border-l-8 border-l-rose-400' }}"
                         onclick="openDetailModal({{ eq.id }})" data-cam-id="{{ eq.id }}">
                         <div class="camera-card-content">
+                            <div class="flex justify-center mb-3">
+                                <div class="w-16 h-16 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100">
+                                    <img src="{{ url_for('static', filename='img/equipment/' + (eq.icon or 'default.svg')) }}"
+                                        alt="" class="w-10 h-10" loading="lazy"
+                                        onerror="this.onerror=null;this.src='{{ url_for('static', filename='img/equipment/default.svg') }}';">
+                                </div>
+                            </div>
                             <div class="flex justify-between items-start mb-2">
                                 <h3 class="font-bold text-lg text-slate-800">{{ eq.name }}</h3>
                                 {% if eq.status == '空き' %}
@@ -451,10 +463,17 @@
                     bodyContent = '<p class="text-slate-400 text-sm italic text-center">利用可能</p>';
                 }
 
+                const iconFile = cam.icon || 'default.svg';
                 return `
                     <div class="camera-card bg-white p-5 rounded-2xl shadow-sm border border-l-8 ${borderClass}"
                          onclick="openDetailModal(${cam.id})" data-cam-id="${cam.id}">
                         <div class="camera-card-content">
+                            <div class="flex justify-center mb-3">
+                                <div class="w-16 h-16 bg-slate-50 rounded-xl flex items-center justify-center border border-slate-100">
+                                    <img src="/static/img/equipment/${iconFile}" alt="" class="w-10 h-10" loading="lazy"
+                                        onerror="this.onerror=null;this.src='/static/img/equipment/default.svg';">
+                                </div>
+                            </div>
                             <div class="flex justify-between items-start mb-2">
                                 <h3 class="font-bold text-lg text-slate-800">${cam.name}</h3>
                                 ${statusBadge}

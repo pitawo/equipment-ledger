@@ -35,7 +35,7 @@
                 <label class="text-xs font-bold text-slate-500 uppercase block mb-1">メールアドレス</label>
                 <div class="relative">
                     <i class="fa-solid fa-envelope absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                    <input type="email" name="email" required placeholder="user@example.com"
+                    <input type="email" name="email" placeholder="user@example.com"
                         class="pl-10 w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
                 </div>
             </div>
@@ -43,13 +43,16 @@
                 <label class="text-xs font-bold text-slate-500 uppercase block mb-1">パスワード</label>
                 <div class="relative">
                     <i class="fa-solid fa-lock absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
-                    <input type="password" name="password" required placeholder="••••••••"
+                    <input type="password" name="password" placeholder="••••••••"
                         class="pl-10 w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all">
                 </div>
             </div>
             <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-indigo-100 mt-6">
                 ログイン
             </button>
+            <p class="text-slate-400 text-xs text-center">
+                アカウントが無い場合は、何も入力せずに「ログイン」を押すとデモとして入れます。
+            </p>
         </form>
 
         <div class="flex items-center gap-3 my-6">
@@ -63,7 +66,7 @@
             登録せずにデモを見る
         </a>
         <p class="text-slate-400 text-xs text-center mt-2">
-            見学用の利用者で入ります。操作は他の見学者にも見えます。
+            見学者ごとに専用のデモデータが用意され、他の人の操作やデータには影響しません。
         </p>
 
         <div class="mt-6 text-center text-sm">

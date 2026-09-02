@@ -28,6 +28,11 @@ login_manager.login_message_category = 'error'
 # 見学モード（公開デモ用）。ALLOW_GUEST=0 で無効にできる
 ALLOW_GUEST = os.environ.get('ALLOW_GUEST', '1') != '0'
 GUEST_EMAIL = 'guest@example.com'
+GUEST_NAME = '見学ユーザー'
+
+# 見学ユーザーごとのサンドボックス（guest_id -> {"equipments": [...]}）。
+# サーバーのメモリ上だけに存在し、ディスクには保存しない。プロセスを再起動すれば消える。
+guest_sandboxes = {}
 
 USERS_DATA_FILE = os.path.join(os.path.dirname(__file__), 'users_data.json')
 
@@ -48,14 +53,23 @@ def save_users(users_list):
         print(f"[ERROR] ユーザー情報の保存失敗: {e}")
 
 class User(UserMixin):
-    def __init__(self, id, name, email, password_hash):
+    def __init__(self, id, name, email, password_hash, is_guest=False, guest_id=None):
         self.id = str(id)
         self.name = name
         self.email = email
         self.password_hash = password_hash
+        # 見学ユーザーかどうか。True なら自分専用のサンドボックス（guest_id）を使う
+        self.is_guest = is_guest
+        self.guest_id = guest_id
 
 @login_manager.user_loader
 def load_user(user_id):
+    if user_id.startswith('guest:'):
+        guest_id = user_id.split(':', 1)[1]
+        if guest_id not in guest_sandboxes:
+            # サーバー再起動等でサンドボックスが消えていたら作り直す（見学用の利用者が消えても入り直せる）
+            guest_sandboxes[guest_id] = load_sample_data()
+        return User(user_id, GUEST_NAME, GUEST_EMAIL, None, is_guest=True, guest_id=guest_id)
     users = load_users()
     for u in users:
         if str(u['id']) == str(user_id):
@@ -190,6 +204,41 @@ def migrate_equipment_data(cam):
 
     return cam
 
+def load_sample_data():
+    """equipment_data_sample.json を読み込んで返す（見学モードの初期値）。
+
+    呼ぶたびに新しいオブジェクトを作る。見学者ごとに独立したサンドボックスを
+    渡すため、使い回すと全員が同じ辞書を共有してしまう。
+    """
+    sample = os.path.join(os.path.dirname(__file__), "equipment_data_sample.json")
+    with open(sample, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def current_data():
+    """今のリクエストが読み書きすべきデータを返す。
+
+    見学ユーザーなら本物の equipment_data.json には一切触れず、
+    自分専用のサンドボックス（guest_sandboxes）だけを読み書きする。
+    """
+    if getattr(current_user, "is_guest", False):
+        if current_user.guest_id not in guest_sandboxes:
+            guest_sandboxes[current_user.guest_id] = load_sample_data()
+        return guest_sandboxes[current_user.guest_id]
+    return data
+
+def persist_current_data():
+    """変更をディスクに保存する。見学ユーザーの操作はサンドボックス内で完結し、
+    本物のデータファイルには書き込まない。"""
+    if not getattr(current_user, "is_guest", False):
+        save_data()
+
+def broadcast_update():
+    """Socket.IO で全員に最新データを配信する。見学ユーザーの操作は自分だけに
+    見えればよく、他の利用者（本物のデータを見ている人・別の見学者）の画面に
+    見学者専用のデータを流し込まないよう配信自体をしない。"""
+    if not getattr(current_user, "is_guest", False):
+        socketio.emit('data_updated', get_all_data())
+
 def ensure_data_file():
     """データファイルが無ければサンプルから作る（初回起動・クローン直後）。"""
     if os.path.exists(DATA_FILE):
@@ -287,12 +336,37 @@ def enrich_reservation(res):
 
     return res
 
-def get_all_data():
-    """全データをJSON形式で取得（ステータスを動的計算）"""
+# 備品名から見た目のジャンルを推測してアイコンを割り当てる。型番までは見ない
+# （実在の型番を判定の単位にしない。将来サンプルに無い名前が来ても落ちないよう
+# 最後は default.svg にフォールバックする）
+EQUIPMENT_ICON_RULES = [
+    (('ronin', 'ジンバル', 'スタビライザー', 'gimbal'), 'gimbal.svg'),
+    (('gopro', 'アクションカム', 'action cam'), 'action_camera.svg'),
+    (('三脚', 'tripod', 'マンフロット', 'manfrotto'), 'tripod.svg'),
+    (('sdカード', 'sd card', 'メモリーカード', 'memory card', 'カード'), 'memory_card.svg'),
+    (('カメラ', 'camera', 'eos', 'α', 'ソニー', 'sony', 'nikon', 'ニコン', 'canon', 'キヤノン'), 'camera.svg'),
+]
+
+def get_equipment_icon(name):
+    """備品名（小文字化）にキーワードが含まれるかで大まかなジャンルを判定する"""
+    lowered = (name or '').lower()
+    for keywords, icon in EQUIPMENT_ICON_RULES:
+        if any(kw.lower() in lowered for kw in keywords):
+            return icon
+    return 'default.svg'
+
+def get_all_data(source=None):
+    """全データをJSON形式で取得（ステータスを動的計算）
+
+    source を省略した場合は current_data() が返すデータを使う
+    （見学ユーザーなら自分のサンドボックス、それ以外は本物のデータ）。
+    """
+    if source is None:
+        source = current_data()
     today = date.today()
     equipments_with_status = []
 
-    for cam in data["equipments"]:
+    for cam in source["equipments"]:
         status, current_res = get_equipment_status(cam)
 
         # 予約を開始日でソートし、終了済みを除外
@@ -309,6 +383,7 @@ def get_all_data():
             "id": cam["id"],
             "name": cam["name"],
             "status": status,
+            "icon": get_equipment_icon(cam["name"]),
             "reservations": valid_reservations
         }
         equipments_with_status.append(cam_data)
@@ -340,47 +415,53 @@ def login():
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
-        
+
+        if not email and not password:
+            # 両方空欄のまま送信 = 見学モードへの入口として扱う
+            return start_guest_session()
+
         users = load_users()
         user_data = next((u for u in users if u['email'] == email), None)
-        
+
         if user_data and check_password_hash(user_data['password_hash'], password):
             user = User(user_data['id'], user_data['name'], user_data['email'], user_data['password_hash'])
             login_user(user)
             return redirect(url_for('index'))
         else:
             error = "メールアドレスまたはパスワードが正しくありません"
-            
+
     return render_template('login.html', error=error)
 
-@app.route('/guest')
-def guest_login():
-    """登録せずに中身を見てもらうための入口。
+def start_guest_session():
+    """見学モードでログインさせる。
 
-    公開デモでは、最初に登録を求められると中を見ずに離脱してしまう。
-    見学用の利用者をその場で用意してログインさせる。データは共有なので、
-    見学中の操作は他の見学者にも見える。
+    見学者ごとに新しい guest_id を発行し、equipment_data_sample.json だけを
+    元にした専用サンドボックスを guest_sandboxes に用意する。本物の
+    equipment_data.json・users_data.json には一切触れないため、見学者が
+    他の利用者（本物のログインユーザー・他の見学者）のデータを書き換えたり
+    壊したりすることはできない。
     """
     if not ALLOW_GUEST:
         flash('見学モードは無効になっています。', 'error')
         return redirect(url_for('login'))
 
-    users = load_users()
-    guest = next((u for u in users if u['email'] == GUEST_EMAIL), None)
-    if not guest:
-        # 永続ディスクの無い環境では再起動で消えるため、その場で作り直す
-        guest = {
-            'id': str(uuid.uuid4()),
-            'name': '見学ユーザー',
-            'email': GUEST_EMAIL,
-            'password_hash': generate_password_hash(secrets.token_urlsafe(32)),
-        }
-        users.append(guest)
-        save_users(users)
+    guest_id = uuid.uuid4().hex
+    guest_sandboxes[guest_id] = load_sample_data()
+    # サンドボックスが際限なく積み上がらないよう、増えすぎたら古いものごと畳む
+    # （公開デモの低トラフィックを想定した簡易な歯止め。永続化はしていないので
+    # 消えても実害はない）
+    if len(guest_sandboxes) > 500:
+        guest_sandboxes.clear()
+        guest_sandboxes[guest_id] = load_sample_data()
 
-    login_user(User(guest['id'], guest['name'], guest['email'], guest['password_hash']))
-    flash('見学モードで開いています。操作は他の見学者にも見えます。', 'success')
+    login_user(User(f'guest:{guest_id}', GUEST_NAME, GUEST_EMAIL, None, is_guest=True, guest_id=guest_id))
+    flash('デモとして閲覧しています。ここでの操作はあなたの画面だけに反映され、他の人には見えません。', 'success')
     return redirect(url_for('index'))
+
+@app.route('/guest')
+def guest_login():
+    """登録せずに中身を見てもらうための入口（ログイン画面のボタンから）。"""
+    return start_guest_session()
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -443,6 +524,7 @@ def reserve():
 
     # バリデーション
     error = None
+    equipments = current_data()["equipments"]
     if not start_date or not end_date:
         error = "日付の形式が正しくありません（例: 1/15）"
     elif start_date < today:
@@ -451,7 +533,7 @@ def reserve():
         error = "終了日は開始日以降の日付を指定してください"
     else:
         # 重複チェック
-        for cam in data["equipments"]:
+        for cam in equipments:
             if cam["id"] == cam_id:
                 for res in cam.get("reservations", []):
                     res_start = parse_date(res.get("start_date", ""))
@@ -469,7 +551,7 @@ def reserve():
         return redirect(url_for('index', error=error))
 
     # 予約を追加
-    for cam in data["equipments"]:
+    for cam in equipments:
         if cam["id"] == cam_id:
             reservation = {
                 "user": user_name,
@@ -482,11 +564,12 @@ def reserve():
             cam_name = cam["name"]
             break
 
-    save_data()
-    
-    # 予約完了メール送信
-    subject = f"【備品台帳】「{cam_name}」の予約が完了しました"
-    body = f"""{current_user.name} 様
+    persist_current_data()
+
+    # 予約完了メール送信（見学モードでは送らない）
+    if not current_user.is_guest:
+        subject = f"【備品台帳】「{cam_name}」の予約が完了しました"
+        body = f"""{current_user.name} 様
 
 備品の予約を受け付けました。
 
@@ -496,9 +579,9 @@ def reserve():
 
 このメールは送信専用です。
 """
-    send_notification_email(current_user.email, subject, body)
+        send_notification_email(current_user.email, subject, body)
 
-    socketio.emit('data_updated', get_all_data())
+    broadcast_update()
     return redirect(url_for('index'))
 
 @app.route('/return/<int:cam_id>')
@@ -509,8 +592,8 @@ def return_cam(cam_id):
     res_user_email = ""
     res_start = ""
     res_end = ""
-    
-    for cam in data["equipments"]:
+
+    for cam in current_data()["equipments"]:
         if cam["id"] == cam_id:
             cam_name = cam["name"]
             # 現在利用中の予約（今日が期間内）を削除
@@ -529,10 +612,10 @@ def return_cam(cam_id):
             cam["reservations"] = new_reservations
             break
 
-    save_data()
-    
-    # 返却完了メール送信
-    if res_user_email:
+    persist_current_data()
+
+    # 返却完了メール送信（見学モードでは送らない）
+    if res_user_email and not current_user.is_guest:
         subject = f"【備品台帳】「{cam_name}」の返却が完了しました"
         body = f"""備品「{cam_name}」の返却処理が完了いたしました。
 ご利用ありがとうございました。
@@ -544,7 +627,7 @@ def return_cam(cam_id):
 """
         send_notification_email(res_user_email, subject, body)
 
-    socketio.emit('data_updated', get_all_data())
+    broadcast_update()
     return redirect(url_for('index'))
 
 @app.route('/cancel/<int:cam_id>')
@@ -557,7 +640,7 @@ def cancel_reservation(cam_id):
     cam_name = ""
     res_user_email = ""
 
-    for cam in data["equipments"]:
+    for cam in current_data()["equipments"]:
         if cam["id"] == cam_id:
             cam_name = cam["name"]
             # 指定された期間の予約を削除
@@ -570,10 +653,10 @@ def cancel_reservation(cam_id):
             cam["reservations"] = new_reservations
             break
 
-    save_data()
-    
-    # キャンセル完了メール送信
-    if res_user_email:
+    persist_current_data()
+
+    # キャンセル完了メール送信（見学モードでは送らない）
+    if res_user_email and not current_user.is_guest:
         subject = f"【備品台帳】「{cam_name}」の予約をキャンセルしました"
         body = f"""備品「{cam_name}」の以下の予約をキャンセルいたしました。
 
@@ -584,20 +667,21 @@ def cancel_reservation(cam_id):
 """
         send_notification_email(res_user_email, subject, body)
 
-    socketio.emit('data_updated', get_all_data())
+    broadcast_update()
     return redirect(url_for('index'))
 
 @app.route('/settings', methods=['POST'])
 @login_required
 def update_master():
     action = request.form.get('action')
+    equipments = current_data()
 
     if action == 'add':
         # 備品追加
         new_name = request.form.get('new_name', '').strip()
         if new_name:
-            new_id = max([c["id"] for c in data["equipments"]], default=0) + 1
-            data["equipments"].append({"id": new_id, "name": new_name, "reservations": []})
+            new_id = max([c["id"] for c in equipments["equipments"]], default=0) + 1
+            equipments["equipments"].append({"id": new_id, "name": new_name, "reservations": []})
 
     elif action == 'delete':
         # 備品削除
@@ -607,7 +691,7 @@ def update_master():
             # 予約が残っているものは削除しない（利用中だけでなく将来の予約も含む）
             new_equipments = []
             blocked = None
-            for c in data["equipments"]:
+            for c in equipments["equipments"]:
                 if c["id"] != cam_id:
                     new_equipments.append(c)
                 elif has_pending_reservations(c):
@@ -616,7 +700,7 @@ def update_master():
             if blocked:
                 flash('「%s」には予約が残っているため削除できません。先に返却するか予約を取り消してください。'
                       % blocked["name"], 'error')
-            data["equipments"] = new_equipments
+            equipments["equipments"] = new_equipments
 
     elif action == 'rename':
         # 備品名変更
@@ -624,19 +708,21 @@ def update_master():
         rename_name = request.form.get('rename_name', '').strip()
         if rename_id and rename_name:
             cam_id = int(rename_id)
-            for cam in data["equipments"]:
+            for cam in equipments["equipments"]:
                 if cam["id"] == cam_id:
                     cam["name"] = rename_name
                     break
 
-    save_data()
-    socketio.emit('data_updated', get_all_data())
+    persist_current_data()
+    broadcast_update()
     return redirect(url_for('index'))
 
 # 手動保存エンドポイント（管理用）
 @app.route('/api/save')
 @login_required
 def manual_save():
+    if current_user.is_guest:
+        return {"status": "ok", "message": "見学モードのため保存はしていません"}
     save_data()
     return {"status": "ok", "message": "データを保存しました"}
 

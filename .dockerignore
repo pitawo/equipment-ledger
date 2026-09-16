@@ -1,0 +1,18 @@
+.git
+.gitignore
+.dockerignore
+Dockerfile
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+*.log
+_t/
+render.yaml
+
+# 動作中に書き換わるデータ。イメージには焼き込まない
+# （equipment_data_sample.json は見学モードの元データなので残す）
+users_data.json
+equipment_data.json
+camera_data.json

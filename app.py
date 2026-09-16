@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, join_room
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -232,12 +232,31 @@ def persist_current_data():
     if not getattr(current_user, "is_guest", False):
         save_data()
 
+# 本物の利用者だけが入る配信先。見学ユーザーはここに入らない。
+MEMBERS_ROOM = "members"
+
+
+@socketio.on("connect")
+def on_socket_connect():
+    """接続してきた相手が本物の利用者のときだけ、配信先の部屋に入れる。
+
+    見学ユーザーを入れないのは、本物の予約データに氏名とメールアドレスが
+    含まれるため。部屋を分けないと、誰かが予約を1件作った瞬間に、
+    同時に見学している無関係な人の画面へその情報が流れる。
+    """
+    if current_user.is_authenticated and not getattr(current_user, "is_guest", False):
+        join_room(MEMBERS_ROOM)
+
+
 def broadcast_update():
-    """Socket.IO で全員に最新データを配信する。見学ユーザーの操作は自分だけに
-    見えればよく、他の利用者（本物のデータを見ている人・別の見学者）の画面に
-    見学者専用のデータを流し込まないよう配信自体をしない。"""
+    """Socket.IO で本物の利用者に最新データを配信する。
+
+    2方向とも塞いでいる。
+    - 見学ユーザーの操作は配信しない（見学者のデータを他人に見せない）
+    - 配信先を MEMBERS_ROOM に限る（本物のデータを見学者に見せない）
+    """
     if not getattr(current_user, "is_guest", False):
-        socketio.emit('data_updated', get_all_data())
+        socketio.emit('data_updated', get_all_data(), room=MEMBERS_ROOM)
 
 def ensure_data_file():
     """データファイルが無ければサンプルから作る（初回起動・クローン直後）。"""
